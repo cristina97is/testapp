@@ -1,6 +1,11 @@
 name: Deploy to Kubernetes
 
 on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+on:
   workflow_run:
     workflows: ["Build & Push Docker image"]
     types: [completed]
