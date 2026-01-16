@@ -3,8 +3,7 @@ name: Deploy to Kubernetes
 on:
   workflow_run:
     workflows: ["Build & Push Docker image (GHCR)"]
-    types:
-      - completed
+    types: [completed]
   workflow_dispatch:
 
 jobs:
@@ -18,18 +17,11 @@ jobs:
 
       - name: Set image tag
         run: |
-          # если деплой запущен из workflow_run, берем branch/tag из workflow_run
-          # при пуше в main будет latest
-          # при пуше тега vX.Y.Z будет vX.Y.Z
-          REF="${{ github.ref }}"
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            REF="${{ github.event.workflow_run.head_branch }}"
+          if [[ "${{ github.event.workflow_run.head_branch }}" == "main" ]]; then
+            echo "TAG=latest" >> $GITHUB_ENV
+          else
+            echo "TAG=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_ENV
           fi
-
-          # Пытаемся понять: это тег v* или обычный main
-          # В workflow_run tag напрямую не всегда доступен, поэтому делаем просто:
-          # main -> latest
-          echo "TAG=latest" >> $GITHUB_ENV
 
       - name: Install kubectl
         run: |
@@ -48,9 +40,16 @@ jobs:
           echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
           kubectl cluster-info
+          kubectl get nodes
 
       - name: Deploy via Helm
         run: |
           helm upgrade --install testapp ./helm/testapp \
-            -n testapp --create-namespace \
-            --set image.repository=ghcr.io
+            --set image.repository=ghcr.io/cristina97is/testapp \
+            --set image.tag=${TAG} \
+            --set image.pullPolicy=Always
+
+      - name: Check rollout
+        run: |
+          kubectl rollout status deploy/testapp-testapp-app --timeout=180s
+          kubectl get pods -o wide
