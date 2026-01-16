@@ -1,0 +1,86 @@
+---
+- name: Disable swap
+  command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Remove swap from fstab
+  lineinfile:
+    path: /etc/fstab
+    regexp: '\sswap\s'
+    state: absent
+
+- name: Load br_netfilter module
+  modprobe:
+    name: br_netfilter
+    state: present
+
+- name: Set sysctl params for Kubernetes
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+    - { name: net.bridge.bridge-nf-call-ip6tables, value: 1 }
+    - { name: net.ipv4.ip_forward, value: 1 }
+
+- name: Ensure apt keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Install dependencies for apt https + gpg
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+    state: present
+    update_cache: yes
+
+# ВАЖНО: чистим всё старое, чтобы не мешало
+- name: Remove old Kubernetes repo list (if exists)
+  file:
+    path: /etc/apt/sources.list.d/kubernetes.list
+    state: absent
+
+- name: Remove old Kubernetes keyrings (if exists)
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    - /etc/apt/keyrings/kubernetes-apt-keyring.asc
+
+# Ключ: качаем и сразу dearmor в бинарный keyring (перезаписываем всегда)
+- name: Install Kubernetes keyring (pkgs.k8s.io) - force overwrite
+  shell: |
+    set -e
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key \
+      | gpg --dearmor \
+      | tee /etc/apt/keyrings/kubernetes-apt-keyring.gpg >/dev/null
+    chmod 0644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    executable: /bin/bash
+
+- name: Add Kubernetes apt repository (pkgs.k8s.io)
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
+    filename: kubernetes
+    state: present
+    update_cache: yes
+
+- name: Install Kubernetes packages
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: yes
+
+- name: Hold Kubernetes packages
+  command: apt-mark hold kubelet kubeadm kubectl
+  changed_when: false

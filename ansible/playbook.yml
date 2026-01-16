@@ -1,0 +1,13 @@
+---
+- name: Configure all servers
+  hosts: all
+  become: true
+  roles:
+    - common
+    - docker
+
+- name: Configure Kubernetes nodes
+  hosts: k8s_master,k8s_app
+  become: true
+  roles:
+    - k8s
