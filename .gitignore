@@ -1,0 +1,14 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Kubernetes
+*.kubeconfig
+kubeconfig*
+
+# Secrets
+.env
+.env.*
+values-secret.yaml
