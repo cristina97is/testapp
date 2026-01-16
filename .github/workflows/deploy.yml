@@ -1,0 +1,76 @@
+name: Deploy to Kubernetes
+
+on:
+  workflow_run:
+    workflows: ["Build & Push Docker image"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine image tag (v* tag -> deploy it, else latest)
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Triggered by commit: $SHA"
+
+          # Ensure tags are present locally
+          git fetch --tags --force
+
+          # Find a tag like v2.0.3 pointing to this exact commit
+          TAG="$(git tag --points-at "$SHA" | grep -E '^v' | head -n 1 || true)"
+
+          if [[ -n "$TAG" ]]; then
+            echo "Using tag: $TAG"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "No v* tag for this commit; using latest"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.14.4"
+
+      - name: Configure kubeconfig
+        shell: bash
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl get nodes
+
+      - name: Deploy via Helm
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm upgrade --install testapp ./helm/testapp \
+            --set image.repository=${{ secrets.IMAGE_NAME }} \
+            --set image.tag=${{ steps.tag.outputs.tag }} \
+            --set image.pullPolicy=Always
+
+          kubectl rollout status deploy/testapp-testapp-app --timeout=180s
+          kubectl get pods -o wide
+          kubectl get svc
