@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "testapp.fullname" . }}-db
+spec:
+  serviceName: {{ include "testapp.fullname" . }}-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "testapp.fullname" . }}-db
+  template:
+    metadata:
+      labels:
+        app: {{ include "testapp.fullname" . }}-db
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "testapp.fullname" . }}-db
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "testapp.fullname" . }}-db
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "testapp.fullname" . }}-db
+                  key: DB_PASS
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: pgdata
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: {{ include "testapp.fullname" . }}-pgdata

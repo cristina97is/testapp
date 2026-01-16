@@ -1,0 +1,22 @@
+image:
+  repository: testapp
+  tag: latest
+  pullPolicy: IfNotPresent
+
+app:
+  port: 3003
+  replicas: 1
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 3003
+  nodePort: 30033
+
+postgres:
+  image: postgres:13-alpine
+  db: tutorial-dev
+  user: vinhle
+  password: password
+  storage:
+    size: 1Gi
